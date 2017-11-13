@@ -3,22 +3,25 @@ package host.serenity.neo.components.commands
 import host.serenity.neo.components.commands.context.CommandExecutionContext
 import host.serenity.neo.components.commands.exceptions.*
 import host.serenity.neo.components.commands.parser.ArgumentParser
-import host.serenity.neo.components.commands.parser.provider.ArgumentParserProvider
 import host.serenity.neo.components.commands.utils.PeekableIterator
 import host.serenity.neo.components.commands.utils.splitExceptingQuotes
 
 class CommandManager {
     val commands = mutableListOf<Command>()
-    val parserProvider = ArgumentParserProvider()
+    private val parserRegistry = mutableMapOf<Class<*>, ArgumentParser<*>>()
 
     constructor() {
-        addDefaultParsers(parserProvider)
+        addDefaultParsers(parserRegistry)
     }
 
     constructor(registerDefaultParsers: Boolean) {
         if (registerDefaultParsers) {
-            addDefaultParsers(parserProvider)
+            addDefaultParsers(parserRegistry)
         }
+    }
+
+    fun <T> registerParser(type: Class<T>, parser: ArgumentParser<T>) {
+        parserRegistry.put(type, parser)
     }
 
     private fun verifyCommand(command: Command) {
@@ -26,7 +29,7 @@ class CommandManager {
 
         command.branches.forEach {
             it.parameterTypes
-                    .filter { parserProvider.getParser(it) == null }
+                    .filter { it !in parserRegistry }
                     .forEach { throw MissingParserException(it) }
         }
     }
@@ -36,9 +39,7 @@ class CommandManager {
         try {
             val command = Command(declaration.name, declaration.aliases.toTypedArray())
             command.branches.addAll(declaration.branches.asSequence()
-                    .map { Command.CommandBranch(it.branchName,
-                            if (it.branchName == null) emptyArray() else it.aliases.toTypedArray(),
-                            it.parameterTypes, it.handler, it.typeHints) })
+                    .map { Command.CommandBranch(it.branchName, it.aliases.toTypedArray(), it.parameterTypes, it.handler, it.typeHints) })
 
             verifyCommand(command)
             commands += command
@@ -50,7 +51,7 @@ class CommandManager {
     @Throws(CommandExecutionException::class)
     fun executeCommand(fullCommand: String) {
         try {
-            val args = splitExceptingQuotes(fullCommand.trim(), true).toList()
+            val args = splitExceptingQuotes(fullCommand, true).toList()
             if (args.isEmpty())
                 throw CommandNotFoundException("")
 
@@ -81,7 +82,7 @@ class CommandManager {
 
             val viableNamedBranches = viableBranches.filter { it.name != null }
             if (viableNamedBranches.size > 1)
-                throw CommandIsAmbiguousException(commandName)
+                throw BranchesAreAmbiguousException(commandName, args[1])
 
             // Loop through named branches first, as branch names have priority over arguments.
             for (branch in viableNamedBranches) {
@@ -119,7 +120,7 @@ class CommandManager {
                 commands.forEach { addAll(it.aliases) }
             }
 
-            return namesAndAliasesOfCommands.filter { it.toLowerCase().startsWith(fullCommand, ignoreCase = true) }
+            return namesAndAliasesOfCommands.filter { it.toLowerCase().startsWith(fullCommand.toLowerCase()) }
         }
 
         val commandName = args[0]
@@ -131,78 +132,63 @@ class CommandManager {
 
         val command = matchingCommands.first()
 
-        if (command.branches.all { it.name != null }) {
-            if (args[1].isBlank())
-                return command.branches.mapNotNull { it.name }
+        if (args[1].isBlank())
+            return command.branches.mapNotNull { it.name }
 
-            val matchingBranchNames = mutableListOf<String>().apply {
-                addAll(command.branches.mapNotNull { it.name })
-                command.branches.forEach { addAll(it.aliases) }
-            }.filter { it.startsWith(args[1], ignoreCase = true) }
+        val matchingBranches = mutableListOf<String>().apply {
+            addAll(command.branches.mapNotNull { it.name })
+            command.branches.forEach { addAll(it.aliases) }
+        }.filter { it.startsWith(args[1]) }
 
-            if (args.size == 2)
-                return matchingBranchNames
-        }
+        if (args.size == 2)
+            return matchingBranches
 
-        val suggestions = mutableListOf<String>()
+        // TODO: Tab completion for parameters
+        // - Solve ambiguity issues
+        // ????
 
-        command.branches.filter {
-            it.name == null || it.name.startsWith(args[1], ignoreCase = true) || it.aliases.any { it.startsWith(args[1], ignoreCase = true) }
-        }.forEach { branch ->
-            try {
-                val startIndex = if (branch.name == null) 1 else 2
-
-                for ((index, parser) in getParsersForBranch(branch).withIndex()) {
-                    if (index == args.lastIndex - startIndex) {
-                        try {
-                            val argsIterator = PeekableIterator(args.listIterator(startIndex))
-                            for (i in 1 until index)
-                                argsIterator.next()
-
-                            val context = CommandExecutionContext(argsIterator, branch.parameterTypes, index)
-                            parser.provideSuggestions(context).forEach { suggestion ->
-                                if (suggestion.startsWith(args.last()))
-                                    suggestions.add(suggestion)
-                            }
-                        } catch (ignored: Exception) {
-                        }
-                    }
-                }
-            } catch (ignored: Exception) {}
-        }
-
-        return suggestions
+        return emptyList()
     }
 
-    private fun getParsersForBranch(branch: Command.CommandBranch): List<ArgumentParser<*>> {
+    private fun parseArgumentsForBranch(branch: Command.CommandBranch, args: List<String>): Array<Any> {
         val parsers = mutableListOf<ArgumentParser<*>>()
         for ((index, parameterType) in branch.parameterTypes.withIndex()) {
             if (index in branch.typeHints) {
                 parsers.add(branch.typeHints[index]!!)
             } else {
-                val parser = parserProvider.getParser(parameterType) ?: throw MissingParserException(parameterType)
-                parsers.add(parser)
+                if (parameterType !in parserRegistry)
+                    throw MissingParserException(parameterType)
+
+                parsers.add(parserRegistry[parameterType]!!)
             }
         }
 
-        return parsers
-    }
-
-    private fun parseArgumentsForBranch(branch: Command.CommandBranch, args: List<String>): Array<Any> {
         val startIndex = if (branch.name == null) 1 else 2
+
+        if (parsers.isEmpty() && args.size > startIndex) {
+            throw ParsingException(InvalidArgumentCount(branch.name ?: "<blank>"))
+        }
+
         val argsIterator = PeekableIterator(args.listIterator(startIndex))
 
         val context = CommandExecutionContext(argsIterator, branch.parameterTypes, 0)
 
         val argumentObjects = mutableListOf<Any>()
-        for ((index, parser) in getParsersForBranch(branch).withIndex()) {
-            context.currentParameter = index
 
-            try {
-                argumentObjects += parser.parse(context)!!
-            } catch (e: Exception) {
-                throw ParsingException(e)
+        val minArgs = parsers.map { it.minimumAcceptedArguments() }.sum()
+
+        if (args.size - startIndex >= minArgs && args.size - startIndex >= parsers.size) {
+            for ((index, parser) in parsers.withIndex()) {
+                context.currentParameter = index
+
+                try {
+                    argumentObjects += parser.parse(context)!!
+                } catch (e: Exception) {
+                    throw ParsingException(e)
+                }
             }
+        } else {
+            throw ParsingException(InvalidArgumentCount(branch.name ?: "<blank>"))
         }
 
         return argumentObjects.toTypedArray()

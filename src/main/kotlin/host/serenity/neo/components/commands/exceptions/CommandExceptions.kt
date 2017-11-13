@@ -7,3 +7,4 @@ class CommandNotFoundException(name: String) : RuntimeException("The command '$n
 class CommandIsAmbiguousException(name: String) : RuntimeException("The command '$name' is ambiguous.")
 
 class NoMatchingBranchesException : RuntimeException("No branches matching were found")
+class BranchesAreAmbiguousException(command: String, branchName: String?) : RuntimeException("Branch '$branchName' is ambiguous for command '$command'.")

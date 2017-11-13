@@ -1,20 +1,14 @@
 package host.serenity.neo.components.commands
 
 import host.serenity.neo.components.commands.parser.*
-import host.serenity.neo.components.commands.parser.provider.ArgumentParserProvider
-import java.util.*
 
-fun addDefaultParsers(parserProvider: ArgumentParserProvider) {
-    parserProvider.register(String::class.java, StringParser())
+fun addDefaultParsers(parserRegistry: MutableMap<Class<*>, ArgumentParser<*>>) {
+    parserRegistry.put(String::class.java, StringParser())
 
-    parserProvider.register(Int::class.java, IntParser())
-    parserProvider.register(Float::class.java, FloatParser())
-    parserProvider.register(Double::class.java, DoubleParser())
-    parserProvider.register(Short::class.java, ShortParser())
-    parserProvider.register(Long::class.java, LongParser())
-    parserProvider.register(Char::class.java, CharParser())
-
-    parserProvider.register(UUID::class.java, UUIDParser())
-
-    parserProvider.addSupplier(GenericEnumParserSupplier())
+    parserRegistry.put(Int::class.java, IntParser())
+    parserRegistry.put(Float::class.java, FloatParser())
+    parserRegistry.put(Double::class.java, DoubleParser())
+    parserRegistry.put(Short::class.java, ShortParser())
+    parserRegistry.put(Long::class.java, LongParser())
+    parserRegistry.put(Char::class.java, CharParser())
 }

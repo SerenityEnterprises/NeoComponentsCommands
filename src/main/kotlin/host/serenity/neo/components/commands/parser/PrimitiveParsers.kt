@@ -19,6 +19,7 @@ class StringParser : ArgumentParser<String> {
     }
 }
 
+
 class IntParser : ArgumentParser<Int> {
     override fun parse(context: CommandExecutionContext): Int {
         return context.arguments.next().toInt()

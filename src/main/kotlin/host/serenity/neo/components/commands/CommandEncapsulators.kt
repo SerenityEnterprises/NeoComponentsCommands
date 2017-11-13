@@ -29,7 +29,7 @@ class CommandDeclaration internal constructor(val name: String) {
         aliases += aliasName
     }
 
-    fun branch(branchName: String? = null, handler: Function<*>): BranchDeclaration {
+    fun branch(branchName: String? = null, handler: Function<*>) {
         val params = handler.javaClass.genericInterfaces
         for (param in params) {
             if (param is ParameterizedType) {
@@ -40,30 +40,21 @@ class CommandDeclaration internal constructor(val name: String) {
                         .filterIsInstance<Class<*>>()
                         .forEach { parameterTypes += it }
 
-                val declaration = BranchDeclaration(branchName, handler, parameterTypes.toTypedArray())
-
-                branches += declaration
-                return declaration
+                branches += BranchDeclaration(branchName, handler, parameterTypes.toTypedArray())
             }
         }
-
-        throw IllegalStateException()
     }
 
     inner class BranchDeclaration internal constructor(val branchName: String?, val handler: Function<*>, val parameterTypes: Array<Class<*>>) {
         internal val aliases = mutableListOf<String>()
         internal val typeHints = mutableMapOf<Int, ArgumentParser<*>>()
 
-        fun alias(aliasName: String): BranchDeclaration {
+        fun alias(aliasName: String) {
             aliases += aliasName
-
-            return this
         }
 
-        fun typeHint(index: Int, parser: ArgumentParser<*>): BranchDeclaration {
+        fun typeHint(index: Int, parser: ArgumentParser<*>) {
             typeHints.put(index, parser)
-
-            return this
         }
     }
 }
