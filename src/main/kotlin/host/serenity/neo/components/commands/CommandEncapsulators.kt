@@ -29,7 +29,7 @@ class CommandDeclaration internal constructor(val name: String) {
         aliases += aliasName
     }
 
-    fun branch(branchName: String? = null, handler: Function<*>) {
+    fun branch(branchName: String? = null, handler: Function<*>): BranchDeclaration {
         val params = handler.javaClass.genericInterfaces
         for (param in params) {
             if (param is ParameterizedType) {
@@ -40,9 +40,14 @@ class CommandDeclaration internal constructor(val name: String) {
                         .filterIsInstance<Class<*>>()
                         .forEach { parameterTypes += it }
 
-                branches += BranchDeclaration(branchName, handler, parameterTypes.toTypedArray())
+                val branchDecl = BranchDeclaration(branchName, handler, parameterTypes.toTypedArray())
+                branches += branchDecl
+
+                return branchDecl
             }
         }
+
+        throw IllegalStateException("Handler function had no generic parameters!")
     }
 
     inner class BranchDeclaration internal constructor(val branchName: String?, val handler: Function<*>, val parameterTypes: Array<Class<*>>) {
